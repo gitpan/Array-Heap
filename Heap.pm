@@ -31,7 +31,7 @@ All of the following functions are being exported by default.
 package Array::Heap;
 
 BEGIN {
-   $VERSION = 0.01;
+   $VERSION = "1.2";
 
    require XSLoader;
    XSLoader::load Array::Heap, $VERSION;
@@ -39,12 +39,17 @@ BEGIN {
 
 use base Exporter;
 
-@EXPORT = qw(make_heap make_heap_cmp push_heap push_heap_cmp pop_heap pop_heap_cmp);
+@EXPORT = qw(make_heap make_heap_lex make_heap_cmp push_heap push_heap_lex push_heap_cmp pop_heap pop_heap_lex pop_heap_cmp);
 
 =item make_heap @heap                                   (\@)
 
 Reorders the elements in the array so they form a heap, with the lowest
 value "on top" of the heap (corresponding to the first array element).
+
+=item make_heap_lex @heap                               (\@)
+
+Just like C<make_heap>, but in string comparison order instead of numerical
+comparison order.
 
 =item make_heap_cmp { compare } @heap                   (&\@)
 
@@ -54,6 +59,11 @@ Just like C<make_heap>, but takes a custom comparison function.
 
 Adds the given element(s) to the heap.
 
+=item push_heap_lex @heap, $element, ...                (\@@)
+
+Just like C<push_heap>, but in string comparison order instead of numerical
+comparison order.
+
 =item push_heap_cmp { compare } @heap, $element, ...    (&\@@)
 
 Just like C<push_heap>, but takes a custom comparison function.
@@ -61,6 +71,11 @@ Just like C<push_heap>, but takes a custom comparison function.
 =item pop_heap @heap                                    (\@)
 
 Removes the topmost (lowest) heap element and repairs the heap.
+
+=item pop_heap_lex @heap                                (\@)
+
+Just like C<pop_heap>, but in string comparison order instead of numerical
+comparison order.
 
 =item pop_heap_cmp { compare } @heap                    (&\@)
 
@@ -78,8 +93,9 @@ All the functions come in two flavours: one that uses the built-in
 comparison function and one that uses a custom comparison function.
 
 The built-in comparison function can either compare scalar numerical
-values, or array refs. If the elements to compare are array refs, the
-first element of the array is used for comparison, i.e.
+values (string values for *_lex functions), or array refs. If the elements
+to compare are array refs, the first element of the array is used for
+comparison, i.e.
 
   1, 4, 6
 
@@ -110,8 +126,8 @@ This module works not work with tied or magical arrays or array elements.
 
 =head1 AUTHOR
 
- Marc Lehmann <pcg@goof.com>
- http://www.goof.com/pcg/marc/
+ Marc Lehmann <schmorp@schmorp.de>
+ http://home.schmorp.de/
 
 =cut
 
