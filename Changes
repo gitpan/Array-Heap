@@ -1,6 +1,8 @@
 Revision history for Perl extension Array::Heap.
 
-TODO: use multicall api to speed up compares.
+1.3   Sun Jul 26 04:58:00 CEST 2009
+	- push_heap_cmp tried to push the comparison function
+          as data element (analyzed by Mark Kidwell).
 
 1.2   Wed Jul  1 10:29:10 CEST 2009
 	- rename to Array::Heap.

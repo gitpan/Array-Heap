@@ -31,7 +31,7 @@ All of the following functions are being exported by default.
 package Array::Heap;
 
 BEGIN {
-   $VERSION = "1.2";
+   $VERSION = '1.3';
 
    require XSLoader;
    XSLoader::load Array::Heap, $VERSION;

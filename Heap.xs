@@ -204,7 +204,7 @@ push_heap_cmp (cmp, heap, ...)
         PROTOTYPE: &\@@
         CODE:
         int i;
-        for (i = 1; i < items; i++)
+        for (i = 2; i < items; i++)
           push_heap (array (heap), cmp_custom, cmp, ST(i));
 
 SV *
