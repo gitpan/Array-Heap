@@ -6,27 +6,27 @@ print "ok 1\n";
 
 @h = (9,8,7,4,3,5,6,1,2);
 make_heap @h;
-print "@h" eq "1 2 5 4 3 7 6 9 8" ? "ok 2\n" : "not ok 2\n";
+print "@h" eq "1 2 5 3 7 8 6 9 4" ? "ok 2\n" : "not ok 2 # @h\n";
 
 @g = map +(pop_heap @h), 1..9;
-print "@g" eq "1 2 3 4 5 6 7 8 9" ? "ok 3\n" : "not ok 3\n";
+print "@g" eq "1 2 3 4 5 6 7 8 9" ? "ok 3\n" : "not ok 3 # @g\n";
 
 push_heap @i, 1,2,3,5,6,7,9,8,4;
-print "@i" eq "1 2 3 4 6 7 9 8 5" ? "ok 4\n" : "not ok 4\n";
+print "@i" eq "1 2 3 4 6 7 9 8 5" ? "ok 4\n" : "not ok 4 # @i\n";
 
 @g = map +(pop_heap @i), 1..9;
-print "@g" eq "1 2 3 4 5 6 7 8 9" ? "ok 5\n" : "not ok 5\n";
+print "@g" eq "1 2 3 4 5 6 7 8 9" ? "ok 5\n" : "not ok 5 # @g\n";
 
 @h = (9,8,7,4,3,5,6,1,2);
 make_heap_cmp { $b <=> $a } @h;
-print "@h" eq "9 8 7 4 3 5 6 1 2" ? "ok 6\n" : "not ok 6\n";
+print "@h" eq "9 8 7 4 3 5 6 1 2" ? "ok 6\n" : "not ok 6 # @h\n";
 
 @g = map +(pop_heap_cmp { $b <=> $a } @h), 1..9;
-print "@g" eq "9 8 7 6 5 4 3 2 1" ? "ok 7\n" : "not ok 7\n";
+print "@g" eq "9 8 7 6 5 4 3 2 1" ? "ok 7\n" : "not ok 7 # @g\n";
 
 @h = (2,1,6,5,3,4,7,8,9);
 make_heap_cmp { $a <=> $b } @h;
-print "@h" eq "1 2 4 5 3 6 7 8 9" ? "ok 8\n" : "not ok 8\n";
+print "@h" eq "1 2 4 5 3 6 7 8 9" ? "ok 8\n" : "not ok 8 # @h\n";
 
 @h = ([4, "hi"], 3, [7], [9,5], [0]);
 make_heap @h;

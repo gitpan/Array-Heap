@@ -3,7 +3,9 @@ Changes
 MANIFEST
 COPYING
 Makefile.PL
+multicall.h
 Heap.xs
 Heap.pm
 t/00_load.t
+t/01_rand.t
 META.yml                                 Module meta-data (added by MakeMaker)

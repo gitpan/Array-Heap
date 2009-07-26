@@ -2,214 +2,317 @@
 #include "perl.h"
 #include "XSUB.h"
 
-static int
-cmp_nv (SV *a, SV *b, SV *data)
+/* pre-5.10 compatibility */
+#ifndef GV_NOTQUAL
+# define GV_NOTQUAL 1
+#endif
+#ifndef gv_fetchpvs
+# define gv_fetchpvs gv_fetchpv
+#endif
+
+/* pre-5.8 compatibility */
+#ifndef PERL_MAGIC_tied
+# define PERL_MAGIC_tied 'P'
+#endif
+
+#include "multicall.h"
+
+/* workaround for buggy multicall API */
+#ifndef cxinc
+# define cxinc() Perl_cxinc (aTHX)
+#endif
+
+#define dCMP			\
+  dMULTICALL;			\
+  void *cmp_data;               \
+  I32 gimme = G_SCALAR;
+
+#define CMP_PUSH(sv)		\
+  PUSH_MULTICALL (cmp_push_ (sv));\
+  cmp_data = multicall_cop;
+
+#define CMP_POP			\
+  POP_MULTICALL;
+
+#define dCMP_CALL(data)		\
+  OP *multicall_cop = (OP *)data;
+
+static void *
+cmp_push_ (SV *sv)
 {
-  if (SvROK (a) && SvTYPE (SvRV (a)) == SVt_PVAV) a = *av_fetch ((AV *)SvRV (a), 0, 1);
-  if (SvROK (b) && SvTYPE (SvRV (b)) == SVt_PVAV) b = *av_fetch ((AV *)SvRV (b), 0, 1);
+  HV *st;
+  GV *gvp;
+  CV *cv;
+
+  cv = sv_2cv (sv, &st, &gvp, 0);
+
+  if (!cv)
+    croak ("%s: callback must be a CODE reference or another callable object", SvPV_nolen (sv));
+
+  if (!PL_firstgv)  PL_firstgv  = gv_fetchpvs ("a", GV_ADD | GV_NOTQUAL, SVt_PV);
+  if (!PL_secondgv) PL_secondgv = gv_fetchpvs ("b", GV_ADD | GV_NOTQUAL, SVt_PV);
+
+  SAVESPTR (GvSV (PL_firstgv));
+  SAVESPTR (GvSV (PL_secondgv));
+
+  return cv;
+}
+
+/*****************************************************************************/
+
+static SV *
+sv_first (SV *sv)
+{
+  if (SvROK (sv) && SvTYPE (SvRV (sv)) == SVt_PVAV)
+    {
+      AV *av = (AV *)SvRV (sv);
+
+      sv = AvFILLp (av) < 0 ? &PL_sv_undef : AvARRAY (av)[0];
+    }
+
+  return sv;
+}
+
+static int
+cmp_nv (SV *a, SV *b, void *cmp_data)
+{
+  a = sv_first (a);
+  b = sv_first (b);
 
   return SvNV (a) > SvNV (b);
 }
 
 static int
-cmp_sv (SV *a, SV *b, SV *data)
+cmp_sv (SV *a, SV *b, void *cmp_data)
 {
-  if (SvROK (a) && SvTYPE (SvRV (a)) == SVt_PVAV) a = *av_fetch ((AV *)SvRV (a), 0, 1);
-  if (SvROK (b) && SvTYPE (SvRV (b)) == SVt_PVAV) b = *av_fetch ((AV *)SvRV (b), 0, 1);
+  a = sv_first (a);
+  b = sv_first (b);
 
-  return sv_cmp(a, b) > 0;
+  return sv_cmp (a, b) > 0;
 }
 
 static int
-cmp_custom (SV *a, SV *b, SV *data)
+cmp_custom (SV *a, SV *b, void *cmp_data)
 {
-  SV *old_a, *old_b;
-  int ret;
-  dSP;
-
-  if (!PL_firstgv)  PL_firstgv  = gv_fetchpv ("a", 1, SVt_PV);
-  if (!PL_secondgv) PL_secondgv = gv_fetchpv ("b", 1, SVt_PV);
-
-  old_a = GvSV (PL_firstgv);
-  old_b = GvSV (PL_secondgv);
+  dCMP_CALL (cmp_data);
 
   GvSV (PL_firstgv)  = a;
   GvSV (PL_secondgv) = b;
 
-  PUSHMARK (SP);
-  PUTBACK;
-  ret = call_sv (data, G_SCALAR | G_NOARGS | G_EVAL);
-  SPAGAIN;
-
-  GvSV (PL_firstgv)  = old_a;
-  GvSV (PL_secondgv) = old_b;
+  MULTICALL;
 
   if (SvTRUE (ERRSV))
     croak (NULL);
 
-  if (ret != 1)
-    croak ("sort function must return exactly one return value");
-
-  return POPi >= 0;
+  {
+    dSP;
+    return TOPi > 0;
+  }
 }
 
-typedef int (*f_cmp)(SV *, SV *, SV *);
+/*****************************************************************************/
+
+typedef int (*f_cmp)(SV *a, SV *b, void *cmp_data);
 
 static AV *
 array (SV *ref)
 {
-  if (SvROK (ref) && SvTYPE (SvRV (ref)) == SVt_PVAV)
+  if (SvROK (ref)
+      && SvTYPE (SvRV (ref)) == SVt_PVAV
+      && !SvTIED_mg (SvRV (ref), PERL_MAGIC_tied))
     return (AV *)SvRV (ref);
 
-  croak ("argument 'heap' must be an array");
+  croak ("argument 'heap' must be a (non-tied) array");
 }
 
-#define geta(i) (*av_fetch (av, (i), 1))
-#define gt(a,b) cmp ((a), (b), data)
-#define seta(i,v) seta_helper (av_fetch (av, (i), 1), v)
+#define gt(a,b) cmp ((a), (b), cmp_data)
 
+/*****************************************************************************/
+
+/* away from the root */
 static void
-seta_helper (SV **i, SV *v)
+downheap (AV *av, f_cmp cmp, void *cmp_data, int N, int k)
 {
-  SvREFCNT_dec (*i);
-  *i = v;
-}
+  SV **heap = AvARRAY (av);
+  SV *he = heap [k];
 
-static void
-push_heap_aux (AV *av, f_cmp cmp, SV *data, int hole_index, int top, SV *value)
-{
-  int parent = (hole_index - 1) / 2;
-
-  while (hole_index > top && gt (geta (parent), value))
+  for (;;)
     {
-      seta (hole_index, SvREFCNT_inc (geta (parent)));
-      hole_index = parent;
-      parent = (hole_index - 1) / 2;
+      int c = (k << 1) + 1;
+
+      if (c >= N)
+        break;
+
+      c += c + 1 < N && gt (heap [c], heap [c + 1])
+           ? 1 : 0;
+
+      if (!(gt (he, heap [c])))
+        break;
+
+      heap [k] = heap [c];
+
+      k = c;
     }
 
-  seta (hole_index, value);
+  heap [k] = he;
+}
+
+/* towards the root */
+static void
+upheap (AV *av, f_cmp cmp, void *cmp_data, int k)
+{
+  SV **heap = AvARRAY (av);
+  SV *he = heap [k];
+
+  while (k)
+    {
+      int p = (k - 1) >> 1;
+
+      if (!(gt (heap [p], he)))
+        break;
+
+      heap [k] = heap [p];
+      k = p;
+    }
+
+  heap [k] = he;
+}
+
+/* move an element suitably so it is in a correct place */
+static void
+adjustheap (AV *av, f_cmp cmp, void *cmp_data, int N, int k)
+{
+  SV **heap = AvARRAY (av);
+
+  if (k > 0 && !gt (heap [k], heap [(k - 1) >> 1]))
+    upheap (av, cmp, cmp_data, k);
+  else
+    downheap (av, cmp, cmp_data, N, k);
+}
+
+/*****************************************************************************/
+
+static void
+make_heap (AV *av, f_cmp cmp, void *cmp_data)
+{
+  int i, len = AvFILLp (av);
+
+  /* do not use floyds algorithm, as I expect the simpler and more cache-efficient */
+  /* upheap is actually faster */
+  for (i = 0; i <= len; ++i)
+    upheap (av, cmp, cmp_data, i);
 }
 
 static void
-adjust_heap (AV *av, f_cmp cmp, SV *data, int hole_index, int len, SV *elem)
+push_heap (AV *av, f_cmp cmp, void *cmp_data, SV **elems, int nelems)
 {
-  int top = hole_index;
-  int second_child = 2 * (hole_index + 1);
+  int i;
 
-  while (second_child < len)
-    {
-      if (gt (geta (second_child), geta (second_child - 1)))
-        second_child--;
+  av_extend (av, AvFILLp (av) + nelems);
 
-      seta (hole_index, SvREFCNT_inc (geta (second_child)));
-      hole_index = second_child;
-      second_child = 2 * (second_child + 1);
-    }
+  /* we do it in two steps, as the perl cmp function might copy the stack */
+  for (i = 0; i < nelems; ++i)
+    AvARRAY (av)[++AvFILLp (av)] = newSVsv (elems [i]);
 
-  if (second_child == len)
-    {
-      seta (hole_index, SvREFCNT_inc (geta (second_child - 1)));
-      hole_index = second_child - 1;
-    }
-
-  push_heap_aux (av, cmp, data, hole_index, top, elem);
-}
-
-static void
-make_heap (AV *av, f_cmp cmp, SV *data)
-{
-  if (av_len (av) > 0)
-    {
-      int len = av_len (av) + 1;
-      int parent = (len - 2) / 2;
-
-      do {
-          adjust_heap (av, cmp, data, parent, len, SvREFCNT_inc (geta (parent)));
-      } while (parent--);
-    }
-}
-
-static void
-push_heap (AV *av, f_cmp cmp, SV *data, SV *elem)
-{
-  elem = newSVsv (elem);
-  av_push (av, elem);
-  push_heap_aux (av, cmp, data, av_len (av), 0, SvREFCNT_inc (elem));
+  for (i = 0; i < nelems; ++i)
+    upheap (av, cmp, cmp_data, AvFILLp (av) - i);
 }
 
 static SV *
-pop_heap (AV *av, f_cmp cmp, SV *data)
+pop_heap (AV *av, f_cmp cmp, void *cmp_data)
 {
-  if (av_len (av) < 0)
+  int len = AvFILLp (av);
+
+  if (len < 0)
     return &PL_sv_undef;
-  else if (av_len (av) == 0)
+  else if (len == 0)
     return av_pop (av);
   else
     {
-      SV *result = newSVsv (geta (0));
       SV *top = av_pop (av);
-
-      adjust_heap (av, cmp, data, 0, av_len (av) + 1, top);
-
+      SV *result = AvARRAY (av)[0];
+      AvARRAY (av)[0] = top;
+      downheap (av, cmp, cmp_data, len, 0);
       return result;
     }
+}
+
+static SV *
+splice_heap (AV *av, f_cmp cmp, void *cmp_data, int idx)
+{
+  int len = AvFILLp (av);
+
+  if (len < 0 || idx > len)
+    return &PL_sv_undef;
+  else if (len == 0 || idx == len)
+    return av_pop (av); /* the only or last element */
+  else
+    {
+      SV *top = av_pop (av);
+      SV *result = AvARRAY (av)[idx];
+      AvARRAY (av)[idx] = top;
+      adjustheap (av, cmp, cmp_data, len, idx);
+      return result;
+    }
+}
+
+static void
+adjust_heap (AV *av, f_cmp cmp, void *cmp_data, int idx)
+{
+  adjustheap (av, cmp, cmp_data, AvFILLp (av) + 1, idx);
 }
 
 MODULE = Array::Heap		PACKAGE = Array::Heap
 
 void
-make_heap (heap)
-	SV *	heap
+make_heap (SV *heap)
         PROTOTYPE: \@
         CODE:
         make_heap (array (heap), cmp_nv, 0);
 
 void
-make_heap_lex (heap)
-	SV *	heap
+make_heap_lex (SV *heap)
         PROTOTYPE: \@
         CODE:
         make_heap (array (heap), cmp_sv, 0);
 
 void
-make_heap_cmp (cmp, heap)
-	SV *	cmp
-	SV *	heap
+make_heap_cmp (SV *cmp, SV *heap)
         PROTOTYPE: &\@
         CODE:
-        make_heap (array (heap), cmp_custom, cmp);
+{
+        dCMP;
+        CMP_PUSH (cmp);
+        make_heap (array (heap), cmp_custom, cmp_data);
+        CMP_POP;
+}
 
 void
-push_heap (heap, ...)
-	SV *	heap
+push_heap (SV *heap, ...)
         PROTOTYPE: \@@
         CODE:
-        int i;
-        for (i = 1; i < items; i++)
-          push_heap (array (heap), cmp_nv, 0, ST(i));
+        push_heap (array (heap), cmp_nv, 0, &(ST(1)), items - 1);
 
 void
-push_heap_lex (heap, ...)
-	SV *	heap
+push_heap_lex (SV *heap, ...)
         PROTOTYPE: \@@
         CODE:
-        int i;
-        for (i = 1; i < items; i++)
-          push_heap (array (heap), cmp_sv, 0, ST(i));
+        push_heap (array (heap), cmp_sv, 0, &(ST(1)), items - 1);
 
 void
-push_heap_cmp (cmp, heap, ...)
-	SV *	cmp
-	SV *	heap
+push_heap_cmp (SV *cmp, SV *heap, ...)
         PROTOTYPE: &\@@
         CODE:
-        int i;
-        for (i = 2; i < items; i++)
-          push_heap (array (heap), cmp_custom, cmp, ST(i));
+{
+	SV **st_2 = &(ST(2)); /* multicall.h uses PUSHSTACK */
+        dCMP;
+        CMP_PUSH (cmp);
+        push_heap (array (heap), cmp_custom, cmp_data, st_2, items - 2);
+        CMP_POP;
+}
 
 SV *
-pop_heap (heap)
-	SV *	heap
+pop_heap (SV *heap)
         PROTOTYPE: \@
         CODE:
         RETVAL = pop_heap (array (heap), cmp_nv, 0);
@@ -217,8 +320,7 @@ pop_heap (heap)
         RETVAL
 
 SV *
-pop_heap_lex (heap)
-	SV *	heap
+pop_heap_lex (SV *heap)
         PROTOTYPE: \@
         CODE:
         RETVAL = pop_heap (array (heap), cmp_sv, 0);
@@ -226,13 +328,67 @@ pop_heap_lex (heap)
         RETVAL
 
 SV *
-pop_heap_cmp (cmp, heap)
-	SV *	cmp
-	SV *	heap
+pop_heap_cmp (SV *cmp, SV *heap)
         PROTOTYPE: &\@
         CODE:
-        RETVAL = pop_heap (array (heap), cmp_custom, cmp);
+{
+        dCMP;
+        CMP_PUSH (cmp);
+        RETVAL = pop_heap (array (heap), cmp_custom, cmp_data);
+        CMP_POP;
+}
         OUTPUT:
         RETVAL
 
+SV *
+splice_heap (SV *heap, int idx)
+        PROTOTYPE: \@$
+        CODE:
+        RETVAL = splice_heap (array (heap), cmp_nv, 0, idx);
+        OUTPUT:
+        RETVAL
+
+SV *
+splice_heap_lex (SV *heap, int idx)
+        PROTOTYPE: \@$
+        CODE:
+        RETVAL = splice_heap (array (heap), cmp_sv, 0, idx);
+        OUTPUT:
+        RETVAL
+
+SV *
+splice_heap_cmp (SV *cmp, SV *heap, int idx)
+        PROTOTYPE: &\@$
+        CODE:
+{
+        dCMP;
+        CMP_PUSH (cmp);
+        RETVAL = splice_heap (array (heap), cmp_custom, cmp_data, idx);
+        CMP_POP;
+}
+        OUTPUT:
+        RETVAL
+
+void
+adjust_heap (SV *heap, int idx)
+        PROTOTYPE: \@$
+        CODE:
+        adjust_heap (array (heap), cmp_nv, 0, idx);
+
+void
+adjust_heap_lex (SV *heap, int idx)
+        PROTOTYPE: \@$
+        CODE:
+        adjust_heap (array (heap), cmp_sv, 0, idx);
+
+void
+adjust_heap_cmp (SV *cmp, SV *heap, int idx)
+        PROTOTYPE: &\@$
+        CODE:
+{
+        dCMP;
+        CMP_PUSH (cmp);
+        adjust_heap (array (heap), cmp_custom, cmp_data, idx);
+        CMP_POP;
+}
 
