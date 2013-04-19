@@ -11,9 +11,9 @@ DESCRIPTION
     looking for.
 
     This module takes a different approach: It exports functions (i.e. no
-    object orientation) that are loosely modeled after the C++ STL's heap
-    functions. They all take an array as argument, just like perl's built-in
-    functions "push", "pop" etc.
+    object orientation) that are loosely modeled after the C++ STL's binary
+    heap functions. They all take an array as argument, just like perl's
+    built-in functions "push", "pop" etc.
 
     The implementation itself is in C for maximum speed.
 
@@ -25,6 +25,10 @@ FUNCTIONS
         lowest value "on top" of the heap (corresponding to the first array
         element).
 
+    make_heap_idx @heap (\@)
+        Just like "make_heap", but updates the index (see INDEXED
+        OPERATIONS).
+
     make_heap_lex @heap (\@)
         Just like "make_heap", but in string comparison order instead of
         numerical comparison order.
@@ -35,6 +39,10 @@ FUNCTIONS
     push_heap @heap, $element, ... (\@@)
         Adds the given element(s) to the heap.
 
+    push_heap_idx @heap, $element, ... (\@@)
+        Just like "push_heap", but updates the index (see INDEXED
+        OPERATIONS).
+
     push_heap_lex @heap, $element, ... (\@@)
         Just like "push_heap", but in string comparison order instead of
         numerical comparison order.
@@ -44,6 +52,10 @@ FUNCTIONS
 
     pop_heap @heap (\@)
         Removes the topmost (lowest) heap element and repairs the heap.
+
+    pop_heap_idx @heap (\@)
+        Just like "pop_heap", but updates the index (see INDEXED
+        OPERATIONS).
 
     pop_heap_lex @heap (\@)
         Just like "pop_heap", but in string comparison order instead of
@@ -56,6 +68,10 @@ FUNCTIONS
         Similar to "pop_heap", but removes and returns the element at index
         $index.
 
+    splice_heap_idx @heap, $index (\@$)
+        Just like "splice_heap", but updates the index (see INDEXED
+        OPERATIONS).
+
     splice_heap_lex @heap, $index (\@$)
         Just like "splice_heap", but in string comparison order instead of
         numerical comparison order.
@@ -67,6 +83,10 @@ FUNCTIONS
         Assuming you have only changed the element at index $index, repair
         the heap again. Can be used to remove elements, replace elements,
         adjust the priority of elements and more.
+
+    adjust_heap_idx @heap, $index (\@$)
+        Just like "adjust_heap", but updates the index (see INDEXED
+        OPERATIONS).
 
     adjust_heap_lex @heap, $index (\@$)
         Just like "adjust_heap", but in string comparison order instead of
@@ -109,6 +129,16 @@ FUNCTIONS
     Unlike "sort", the default sort is numerical and it is not possible to
     use normal subroutines.
 
+  INDEXED OPERATIONS
+    The functions whose names end in "_idx" also "update the index". That
+    means that all elements must be array refs, with the first element being
+    the heap value, and the second value being the array index:
+
+      [$value, $index, ...]
+
+    This allows you to quickly locate an element in the array when all you
+    have is the array reference.
+
 BUGS
     *   Numerical comparison is always done using floatingpoint, which
         usually has less precision than a 64 bit integer that perl might use
@@ -122,7 +152,7 @@ BUGS
         exits unexpectedly (e.g. "last") or throws an exception, so do not
         do that.
 
-AUTHOR
+AUTHOR AND CONTACT INFORMATION
      Marc Lehmann <schmorp@schmorp.de>
-     http://home.schmorp.de/
+     http://software.schmorp.de/pkg/Array-Heap
 

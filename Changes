@@ -1,8 +1,10 @@
 Revision history for Perl extension Array::Heap.
 
-TODO: get rid of the superflous SvREFCNT_inc and seta_helper.
+3.0   Fri Apr 19 22:11:11 CEST 2013
+	- implement _idx variants that also keep an index value
+          updates in array references.
 
-2.0
+2.0   Sun Jul 26 07:25:27 CEST 2009
 	- complete rewrite (use the hopefully clearer
           libev hash functions).
 	- add splice_heap and adjust_heap family of functions.

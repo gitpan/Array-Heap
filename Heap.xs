@@ -73,6 +73,37 @@ sv_first (SV *sv)
   return sv;
 }
 
+static void
+set_idx (SV *sv, int idx)
+{
+  if (!SvROK (sv))
+    return;
+
+  sv = SvRV (sv);
+  
+  if (SvTYPE (sv) != SVt_PVAV)
+    return;
+  
+  if (AvFILL ((AV *)sv) < 1 || AvARRAY ((AV *)sv)[1] == &PL_sv_undef)
+    av_store ((AV *)sv, 1, newSViv (idx));
+  else
+    {
+      sv = AvARRAY ((AV *)sv)[1];
+
+      if (SvTYPE (sv) == SVt_IV)
+        SvIV_set (sv, idx);
+      else
+        sv_setiv (sv, idx);
+    }
+}
+
+#define set_heap(idx,he)		\
+  do {					\
+    if (flags)				\
+      set_idx (he, idx);		\
+    heap [idx] = he;			\
+  } while (0)
+
 static int
 cmp_nv (SV *a, SV *b, void *cmp_data)
 {
@@ -131,7 +162,7 @@ array (SV *ref)
 
 /* away from the root */
 static void
-downheap (AV *av, f_cmp cmp, void *cmp_data, int N, int k)
+downheap (AV *av, f_cmp cmp, void *cmp_data, int N, int k, int flags)
 {
   SV **heap = AvARRAY (av);
   SV *he = heap [k];
@@ -149,17 +180,17 @@ downheap (AV *av, f_cmp cmp, void *cmp_data, int N, int k)
       if (!(gt (he, heap [c])))
         break;
 
-      heap [k] = heap [c];
+      set_heap (k, heap [c]);
 
       k = c;
     }
 
-  heap [k] = he;
+  set_heap (k, he);
 }
 
 /* towards the root */
 static void
-upheap (AV *av, f_cmp cmp, void *cmp_data, int k)
+upheap (AV *av, f_cmp cmp, void *cmp_data, int k, int flags)
 {
   SV **heap = AvARRAY (av);
   SV *he = heap [k];
@@ -171,40 +202,40 @@ upheap (AV *av, f_cmp cmp, void *cmp_data, int k)
       if (!(gt (heap [p], he)))
         break;
 
-      heap [k] = heap [p];
+      set_heap (k, heap [p]);
       k = p;
     }
 
-  heap [k] = he;
+  set_heap (k, he);
 }
 
 /* move an element suitably so it is in a correct place */
 static void
-adjustheap (AV *av, f_cmp cmp, void *cmp_data, int N, int k)
+adjustheap (AV *av, f_cmp cmp, void *cmp_data, int N, int k, int flags)
 {
   SV **heap = AvARRAY (av);
 
   if (k > 0 && !gt (heap [k], heap [(k - 1) >> 1]))
-    upheap (av, cmp, cmp_data, k);
+    upheap (av, cmp, cmp_data, k, flags);
   else
-    downheap (av, cmp, cmp_data, N, k);
+    downheap (av, cmp, cmp_data, N, k, flags);
 }
 
 /*****************************************************************************/
 
 static void
-make_heap (AV *av, f_cmp cmp, void *cmp_data)
+make_heap (AV *av, f_cmp cmp, void *cmp_data, int flags)
 {
   int i, len = AvFILLp (av);
 
   /* do not use floyds algorithm, as I expect the simpler and more cache-efficient */
   /* upheap is actually faster */
   for (i = 0; i <= len; ++i)
-    upheap (av, cmp, cmp_data, i);
+    upheap (av, cmp, cmp_data, i, flags);
 }
 
 static void
-push_heap (AV *av, f_cmp cmp, void *cmp_data, SV **elems, int nelems)
+push_heap (AV *av, f_cmp cmp, void *cmp_data, SV **elems, int nelems, int flags)
 {
   int i;
 
@@ -215,11 +246,11 @@ push_heap (AV *av, f_cmp cmp, void *cmp_data, SV **elems, int nelems)
     AvARRAY (av)[++AvFILLp (av)] = newSVsv (elems [i]);
 
   for (i = 0; i < nelems; ++i)
-    upheap (av, cmp, cmp_data, AvFILLp (av) - i);
+    upheap (av, cmp, cmp_data, AvFILLp (av) - i, flags);
 }
 
 static SV *
-pop_heap (AV *av, f_cmp cmp, void *cmp_data)
+pop_heap (AV *av, f_cmp cmp, void *cmp_data, int flags)
 {
   int len = AvFILLp (av);
 
@@ -232,13 +263,13 @@ pop_heap (AV *av, f_cmp cmp, void *cmp_data)
       SV *top = av_pop (av);
       SV *result = AvARRAY (av)[0];
       AvARRAY (av)[0] = top;
-      downheap (av, cmp, cmp_data, len, 0);
+      downheap (av, cmp, cmp_data, len, 0, flags);
       return result;
     }
 }
 
 static SV *
-splice_heap (AV *av, f_cmp cmp, void *cmp_data, int idx)
+splice_heap (AV *av, f_cmp cmp, void *cmp_data, int idx, int flags)
 {
   int len = AvFILLp (av);
 
@@ -251,15 +282,15 @@ splice_heap (AV *av, f_cmp cmp, void *cmp_data, int idx)
       SV *top = av_pop (av);
       SV *result = AvARRAY (av)[idx];
       AvARRAY (av)[idx] = top;
-      adjustheap (av, cmp, cmp_data, len, idx);
+      adjustheap (av, cmp, cmp_data, len, idx, flags);
       return result;
     }
 }
 
 static void
-adjust_heap (AV *av, f_cmp cmp, void *cmp_data, int idx)
+adjust_heap (AV *av, f_cmp cmp, void *cmp_data, int idx, int flags)
 {
-  adjustheap (av, cmp, cmp_data, AvFILLp (av) + 1, idx);
+  adjustheap (av, cmp, cmp_data, AvFILLp (av) + 1, idx, flags);
 }
 
 MODULE = Array::Heap		PACKAGE = Array::Heap
@@ -267,14 +298,16 @@ MODULE = Array::Heap		PACKAGE = Array::Heap
 void
 make_heap (SV *heap)
         PROTOTYPE: \@
+        ALIAS:
+        make_heap_idx = 1
         CODE:
-        make_heap (array (heap), cmp_nv, 0);
+        make_heap (array (heap), cmp_nv, 0, ix);
 
 void
 make_heap_lex (SV *heap)
         PROTOTYPE: \@
         CODE:
-        make_heap (array (heap), cmp_sv, 0);
+        make_heap (array (heap), cmp_sv, 0, 0);
 
 void
 make_heap_cmp (SV *cmp, SV *heap)
@@ -283,21 +316,23 @@ make_heap_cmp (SV *cmp, SV *heap)
 {
         dCMP;
         CMP_PUSH (cmp);
-        make_heap (array (heap), cmp_custom, cmp_data);
+        make_heap (array (heap), cmp_custom, cmp_data, 0);
         CMP_POP;
 }
 
 void
 push_heap (SV *heap, ...)
         PROTOTYPE: \@@
+        ALIAS:
+        push_heap_idx = 1
         CODE:
-        push_heap (array (heap), cmp_nv, 0, &(ST(1)), items - 1);
+        push_heap (array (heap), cmp_nv, 0, &(ST(1)), items - 1, ix);
 
 void
 push_heap_lex (SV *heap, ...)
         PROTOTYPE: \@@
         CODE:
-        push_heap (array (heap), cmp_sv, 0, &(ST(1)), items - 1);
+        push_heap (array (heap), cmp_sv, 0, &(ST(1)), items - 1, 0);
 
 void
 push_heap_cmp (SV *cmp, SV *heap, ...)
@@ -307,15 +342,17 @@ push_heap_cmp (SV *cmp, SV *heap, ...)
 	SV **st_2 = &(ST(2)); /* multicall.h uses PUSHSTACK */
         dCMP;
         CMP_PUSH (cmp);
-        push_heap (array (heap), cmp_custom, cmp_data, st_2, items - 2);
+        push_heap (array (heap), cmp_custom, cmp_data, st_2, items - 2, 0);
         CMP_POP;
 }
 
 SV *
 pop_heap (SV *heap)
         PROTOTYPE: \@
+        ALIAS:
+        pop_heap_idx = 1
         CODE:
-        RETVAL = pop_heap (array (heap), cmp_nv, 0);
+        RETVAL = pop_heap (array (heap), cmp_nv, 0, ix);
         OUTPUT:
         RETVAL
 
@@ -323,7 +360,7 @@ SV *
 pop_heap_lex (SV *heap)
         PROTOTYPE: \@
         CODE:
-        RETVAL = pop_heap (array (heap), cmp_sv, 0);
+        RETVAL = pop_heap (array (heap), cmp_sv, 0, 0);
         OUTPUT:
         RETVAL
 
@@ -334,7 +371,7 @@ pop_heap_cmp (SV *cmp, SV *heap)
 {
         dCMP;
         CMP_PUSH (cmp);
-        RETVAL = pop_heap (array (heap), cmp_custom, cmp_data);
+        RETVAL = pop_heap (array (heap), cmp_custom, cmp_data, 0);
         CMP_POP;
 }
         OUTPUT:
@@ -343,8 +380,10 @@ pop_heap_cmp (SV *cmp, SV *heap)
 SV *
 splice_heap (SV *heap, int idx)
         PROTOTYPE: \@$
+        ALIAS:
+        splice_heap_idx = 1
         CODE:
-        RETVAL = splice_heap (array (heap), cmp_nv, 0, idx);
+        RETVAL = splice_heap (array (heap), cmp_nv, 0, idx, ix);
         OUTPUT:
         RETVAL
 
@@ -352,7 +391,7 @@ SV *
 splice_heap_lex (SV *heap, int idx)
         PROTOTYPE: \@$
         CODE:
-        RETVAL = splice_heap (array (heap), cmp_sv, 0, idx);
+        RETVAL = splice_heap (array (heap), cmp_sv, 0, idx, 0);
         OUTPUT:
         RETVAL
 
@@ -363,7 +402,7 @@ splice_heap_cmp (SV *cmp, SV *heap, int idx)
 {
         dCMP;
         CMP_PUSH (cmp);
-        RETVAL = splice_heap (array (heap), cmp_custom, cmp_data, idx);
+        RETVAL = splice_heap (array (heap), cmp_custom, cmp_data, idx, 0);
         CMP_POP;
 }
         OUTPUT:
@@ -372,14 +411,16 @@ splice_heap_cmp (SV *cmp, SV *heap, int idx)
 void
 adjust_heap (SV *heap, int idx)
         PROTOTYPE: \@$
+        ALIAS:
+        adjust_heap_idx = 1
         CODE:
-        adjust_heap (array (heap), cmp_nv, 0, idx);
+        adjust_heap (array (heap), cmp_nv, 0, idx, ix);
 
 void
 adjust_heap_lex (SV *heap, int idx)
         PROTOTYPE: \@$
         CODE:
-        adjust_heap (array (heap), cmp_sv, 0, idx);
+        adjust_heap (array (heap), cmp_sv, 0, idx, 0);
 
 void
 adjust_heap_cmp (SV *cmp, SV *heap, int idx)
@@ -388,7 +429,7 @@ adjust_heap_cmp (SV *cmp, SV *heap, int idx)
 {
         dCMP;
         CMP_PUSH (cmp);
-        adjust_heap (array (heap), cmp_custom, cmp_data, idx);
+        adjust_heap (array (heap), cmp_custom, cmp_data, idx, 0);
         CMP_POP;
 }
 

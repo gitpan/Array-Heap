@@ -13,9 +13,9 @@ want to search for /Heap/ and /Priority/ to find many. They implement more
 or less fancy datastructures that might well be what you are looking for.
 
 This module takes a different approach: It exports functions (i.e. no
-object orientation) that are loosely modeled after the C++ STL's heap
-functions. They all take an array as argument, just like perl's built-in
-functions C<push>, C<pop> etc.
+object orientation) that are loosely modeled after the C++ STL's binary
+heap functions. They all take an array as argument, just like perl's
+built-in functions C<push>, C<pop> etc.
 
 The implementation itself is in C for maximum speed.
 
@@ -30,7 +30,7 @@ All of the following functions are being exported by default.
 package Array::Heap;
 
 BEGIN {
-   $VERSION = '2.0';
+   $VERSION = '3.0';
 
    require XSLoader;
    XSLoader::load ("Array::Heap", $VERSION);
@@ -39,17 +39,21 @@ BEGIN {
 use base Exporter;
 
 @EXPORT = qw(
-   make_heap   make_heap_lex   make_heap_cmp
-   push_heap   push_heap_lex   push_heap_cmp
-   pop_heap    pop_heap_lex    pop_heap_cmp
-   splice_heap splice_heap_lex splice_heap_cmp
-   adjust_heap adjust_heap_lex adjust_heap_cmp
+   make_heap   make_heap_lex   make_heap_cmp   make_heap_idx
+   push_heap   push_heap_lex   push_heap_cmp   push_heap_idx
+   pop_heap    pop_heap_lex    pop_heap_cmp    pop_heap_idx
+   splice_heap splice_heap_lex splice_heap_cmp splice_heap_idx
+   adjust_heap adjust_heap_lex adjust_heap_cmp adjust_heap_idx
 );
 
 =item make_heap @heap                                   (\@)
 
 Reorders the elements in the array so they form a heap, with the lowest
 value "on top" of the heap (corresponding to the first array element).
+
+=item make_heap_idx @heap                               (\@)
+
+Just like C<make_heap>, but updates the index (see INDEXED OPERATIONS).
 
 =item make_heap_lex @heap                               (\@)
 
@@ -64,6 +68,10 @@ Just like C<make_heap>, but takes a custom comparison function.
 
 Adds the given element(s) to the heap.
 
+=item push_heap_idx @heap, $element, ...                (\@@)
+
+Just like C<push_heap>,  but updates the index (see INDEXED OPERATIONS).
+
 =item push_heap_lex @heap, $element, ...                (\@@)
 
 Just like C<push_heap>, but in string comparison order instead of numerical
@@ -76,6 +84,10 @@ Just like C<push_heap>, but takes a custom comparison function.
 =item pop_heap @heap                                    (\@)
 
 Removes the topmost (lowest) heap element and repairs the heap.
+
+=item pop_heap_idx @heap                                (\@)
+
+Just like C<pop_heap>, but updates the index (see INDEXED OPERATIONS).
 
 =item pop_heap_lex @heap                                (\@)
 
@@ -91,6 +103,10 @@ Just like C<pop_heap>, but takes a custom comparison function.
 Similar to C<pop_heap>, but removes and returns the element at index
 C<$index>.
 
+=item splice_heap_idx @heap, $index                     (\@$)
+
+Just like C<splice_heap>, but updates the index (see INDEXED OPERATIONS).
+
 =item splice_heap_lex @heap, $index                     (\@$)
 
 Just like C<splice_heap>, but in string comparison order instead of
@@ -105,6 +121,10 @@ Just like C<splice_heap>, but takes a custom comparison function.
 Assuming you have only changed the element at index C<$index>, repair the
 heap again. Can be used to remove elements, replace elements, adjust the
 priority of elements and more.
+
+=item adjust_heap_idx @heap, $index                     (\@$)
+
+Just like C<adjust_heap>, but updates the index (see INDEXED OPERATIONS).
 
 =item adjust_heap_lex @heap, $index                     (\@$)
 
@@ -156,6 +176,17 @@ And the second example corresponds to this:
 Unlike C<sort>, the default sort is numerical and it is not possible to
 use normal subroutines.
 
+=head2 INDEXED OPERATIONS
+
+The functions whose names end in C<_idx> also "update the index". That
+means that all elements must be array refs, with the first element being
+the heap value, and the second value being the array index:
+
+  [$value, $index, ...]
+
+This allows you to quickly locate an element in the array when all you
+have is the array reference.
+
 =head1 BUGS
 
 =over 4
@@ -176,10 +207,10 @@ not do that.
 
 =cut
 
-=head1 AUTHOR
+=head1 AUTHOR AND CONTACT INFORMATION
 
  Marc Lehmann <schmorp@schmorp.de>
- http://home.schmorp.de/
+ http://software.schmorp.de/pkg/Array-Heap
 
 =cut
 
