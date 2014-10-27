@@ -1,5 +1,10 @@
 Revision history for Perl extension Array::Heap.
 
+3.1   Mon Oct 27 23:33:24 CET 2014
+	- simplify logic in splice_heap.
+        - report out-of-bounds indices in adjust_heap*,
+          instead of crashing or worse.
+
 3.0   Fri Apr 19 22:11:11 CEST 2013
 	- implement _idx variants that also keep an index value
           updates in array references.

@@ -1,6 +1,6 @@
 =head1 NAME
 
-Array::Heap - treat perl arrays as heaps (priority queues)
+Array::Heap - treat perl arrays as binary heaps/priority queues
 
 =head1 SYNOPSIS
 
@@ -30,7 +30,7 @@ All of the following functions are being exported by default.
 package Array::Heap;
 
 BEGIN {
-   $VERSION = '3.0';
+   $VERSION = 3.1;
 
    require XSLoader;
    XSLoader::load ("Array::Heap", $VERSION);

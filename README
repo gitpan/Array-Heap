@@ -1,5 +1,5 @@
 NAME
-    Array::Heap - treat perl arrays as heaps (priority queues)
+    Array::Heap - treat perl arrays as binary heaps/priority queues
 
 SYNOPSIS
      use Array::Heap;

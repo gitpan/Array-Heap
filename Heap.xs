@@ -273,10 +273,10 @@ splice_heap (AV *av, f_cmp cmp, void *cmp_data, int idx, int flags)
 {
   int len = AvFILLp (av);
 
-  if (len < 0 || idx > len)
+  if (idx < 0 || idx > len)
     return &PL_sv_undef;
-  else if (len == 0 || idx == len)
-    return av_pop (av); /* the only or last element */
+  else if (idx == len)
+    return av_pop (av); /* the last element */
   else
     {
       SV *top = av_pop (av);
@@ -290,7 +290,12 @@ splice_heap (AV *av, f_cmp cmp, void *cmp_data, int idx, int flags)
 static void
 adjust_heap (AV *av, f_cmp cmp, void *cmp_data, int idx, int flags)
 {
-  adjustheap (av, cmp, cmp_data, AvFILLp (av) + 1, idx, flags);
+  int len = AvFILLp (av);
+
+  if (idx > len)
+    croak ("Array::Heap::adjust_heap: index out of array bounds");
+
+  adjustheap (av, cmp, cmp_data, len + 1, idx, flags);
 }
 
 MODULE = Array::Heap		PACKAGE = Array::Heap
